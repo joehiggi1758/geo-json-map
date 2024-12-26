@@ -23,9 +23,7 @@ st.set_page_config(page_title="Redistricting Portal", layout="wide")
 
 PRIMARY_COLOR = "#B58264"  # Primary color for states with proposed updates
 HIGHLIGHT_COLOR = "#3A052E"  # Color for the highlighted county
-PROPOSED_COLOR_DEFAULT = (
-    "#474546"  # Default color for proposed districts (overridden by random colors)
-)
+PROPOSED_COLOR_DEFAULT = "#474546"  # Default color for proposed districts (overridden by random colors)
 BACKGROUND_COLOR = "#F9FAFB"  # Background color for the app
 
 # Optional Custom CSS for styling (currently commented out)
@@ -187,11 +185,11 @@ def list_saved_versions(folder_path):
 def generate_map_snapshot(gdf, title="Proposed Districts Snapshot"):
     """Generate a PNG snapshot of a GeoDataFrame using matplotlib."""
     if gdf.empty:
-        fig, ax = plt.subplots(figsize=(12, 9))  # Landscape orientation
+        fig, ax = plt.subplots(figsize=(8, 6))  # Landscape orientation
         ax.text(0.5, 0.5, "No geometry to display", ha="center", va="center")
         ax.axis("off")
     else:
-        fig, ax = plt.subplots(figsize=(12, 9))  # Landscape orientation
+        fig, ax = plt.subplots(figsize=(8, 6))  # Landscape orientation
         gdf.plot(ax=ax, edgecolor="black", color=gdf["color"], alpha=0.6)
         ax.set_title(title)
         ax.axis("off")
@@ -204,46 +202,44 @@ def generate_map_snapshot(gdf, title="Proposed Districts Snapshot"):
 
 def generate_pdf(map_png, version_name, highlights):
     """Create an in-memory PDF containing text, snapshot, etc., in landscape mode."""
-    pdf = FPDF(orientation="L", unit="mm", format="A4")  # Landscape orientation
+    pdf = FPDF(orientation="L", unit="mm", format="A4")  # Landscape orientation (297x210mm)
     pdf.add_page()
 
-    # Set fonts
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Redistricting Report", ln=True, align="C")
+    pdf.cell(0, 10, "Territory Plan", ln=True, align="C")
 
-    pdf.set_font("Arial", size=12)
-    pdf.ln(5)
+    pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, f"Version: {version_name}", ln=True)
-
-    # Create a multi-cell for highlights
-    pdf.multi_cell(0, 10, f"Highlights:\n{highlights}", align="L")
-    pdf.ln(5)
 
     if map_png is not None:
         temp_file = "temp_map_snapshot.png"
         try:
             with open(temp_file, "wb") as temp_img:
                 temp_img.write(map_png.getbuffer())
-            # Calculate positions and dimensions
-            # A4 landscape: 297mm x 210mm
-            # Margins: 10mm
-            image_width = 222.75  # 75% of page width
-            image_x = 10
-            image_y = pdf.get_y()
-            pdf.image(temp_file, x=image_x, y=image_y, w=image_width)
 
-            # Comments position
-            comments_x = image_x + image_width + 10  # 10mm gap
-            comments_width = 297 - comments_x - 10  # 10mm right margin
-            pdf.set_xy(comments_x, image_y)
-            pdf.multi_cell(comments_width, 10, highlights, align="L")
+            # Calculate dimensions
+            page_width = 297  # A4 landscape width in mm
+            margin = 10
+            map_width = int(page_width * 0.7) - (2 * margin)  # 70% of usable width
+            comments_width = int(page_width * 0.3) - margin   # 30% of usable width
+
+            # Position the map on the left
+            map_x = margin
+            map_y = pdf.get_y()
+            pdf.image(temp_file, x=map_x, y=map_y, w=map_width)
+
+            # Position comments on the right
+            pdf.set_xy(map_x + map_width + margin, map_y)
+            pdf.set_font("Arial", "I", 10)
+            pdf.multi_cell(comments_width, 10, f"Comments: {highlights}")
+
         finally:
             try:
                 os.remove(temp_file)
             except FileNotFoundError:
                 pass
 
-    pdf_buffer = io.BytesIO(pdf.output(dest="S").encode("latin-1"))
+        pdf_buffer = io.BytesIO(pdf.output(dest="S").encode("latin-1"))
     return pdf_buffer
 
 def get_random_color():
@@ -269,8 +265,7 @@ def style_function_version(feature):
     statefp = feature["properties"].get("STATEFP")
     color = feature["properties"].get("color", PROPOSED_COLOR_DEFAULT)  # Default to PROPOSED_COLOR_DEFAULT if color is missing
 
-    # Debugging: Removed st.write to prevent JSON from being printed in the app
-    # st.write(f"StateFP: {statefp}, Color: {color}, Properties: {feature['properties']}")
+    # Removed st.write to prevent JSON from being printed in the app
 
     if statefp in states_with_updates:
         if color != PRIMARY_COLOR:
@@ -390,7 +385,7 @@ selected_county = st.sidebar.selectbox("Choose a county:", county_names)
 # -------------------------------------------------------------------
 # TABS
 # -------------------------------------------------------------------
-tab_main, tab_snapshot, tab_upload = st.tabs(["Main", "Saved Versions", "Upload Data"])
+tab_main, tab_snapshot, tab_upload = st.tabs(["Main", "Versions", "Upload"])
 
 # -------------------- TAB: MAIN MAP --------------------
 with tab_main:
@@ -491,7 +486,7 @@ with tab_main:
                         (drawn_shape, random_color)
                     )
                     st.success(
-                        f"Added new {drawn_shape.geom_type} to memory with color {random_color}."
+                        f"Added new Territory ({drawn_shape.geom_type}) with color {random_color}."
                     )
                 else:
                     st.error(
@@ -502,7 +497,6 @@ with tab_main:
 
     # Display number of pending polygons
     num_pending = len(st.session_state.get("pending_polygons", []))
-    # print(st.session_state.get("pending_polygons", []))  # Debugging
 
     st.write(f"**Updated Districts:** {num_pending}")
 
@@ -510,7 +504,7 @@ with tab_main:
     version_name = st.text_input("Enter version name (e.g., 'Draft 1'):")
 
     # Button to save proposed district
-    if st.button("Save Proposed District"):
+    if st.button("Save Proposed Territories"):
         if num_pending == 0:
             st.error("No polygons drawn to save!")
         elif not version_name.strip():
@@ -529,10 +523,7 @@ with tab_main:
                     },
                     crs=final_gdf.crs,
                 )
-                
-                # print(new_row)  # Debugging
                 final_gdf = pd.concat([final_gdf, new_row], ignore_index=True)
-                # print(final_gdf)  # Debugging
 
             # Clear pending polygons
             st.session_state["pending_polygons"].clear()
@@ -578,7 +569,6 @@ with tab_snapshot:
 
     # List saved versions
     saved_versions = list_saved_versions(VERSION_FOLDER)
-    # print(saved_versions)
     if not saved_versions:
         st.info("No saved versions available.")
     else:
@@ -659,7 +649,7 @@ with tab_snapshot:
                         label="Export PDF",
                         data=generate_pdf(
                             generate_map_snapshot(
-                                version_gdf, title=f"Snapshot: {selected_version}"
+                                version_gdf, title=f""
                             ),
                             selected_version,
                             pdf_highlights,

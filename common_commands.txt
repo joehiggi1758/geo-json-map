@@ -1,0 +1,2 @@
+rm -rf ../data/output/*.geojson && streamlit run gm_0.py
+conda list | awk '{ print $1 }' > requirements.txt
