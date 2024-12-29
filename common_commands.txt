@@ -1,2 +1,15 @@
+-- Previous commands
 rm -rf ../data/output/*.geojson && streamlit run gm_0.py
+docker build -t redistricting-app:latest .
+docker run -p 8501:8501 redistricting-app:latest
+
+-- Most up to date
 conda list | awk '{ print $1 }' > requirements.txt
+docker-compose build
+docker-compose up
+
+-- Optional = detached mode
+docker-compose up -d
+
+-- Optional = view logs
+docker-compose logs -f
