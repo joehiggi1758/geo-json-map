@@ -1,19 +1,22 @@
 # -------------------------------------------------------------------
 # Import statements
 # -------------------------------------------------------------------
-import os
-import io
-import json
-import random
-import logging  # Optional for debugging
-import pandas as pd
-import geopandas as gpd
+# Import statements
 import matplotlib.pyplot as plt
+import geopandas as gpd
 import streamlit as st
+import pandas as pd
 import folium
-from datetime import datetime
-from shapely.geometry import shape
+import random
+import json
+import io
+import os
+
+# From statements
 from streamlit_folium import st_folium
+from sqlalchemy import create_engine
+from shapely.geometry import shape
+from datetime import datetime
 from folium import plugins
 from fpdf import FPDF
 
@@ -24,20 +27,20 @@ st.set_page_config(page_title="Redistricting Portal", layout="wide")
 
 PRIMARY_COLOR = "#B58264"
 HIGHLIGHT_COLOR = "#3A052E"
-PROPOSED_COLOR_DEFAULT = "#474546"
-BACKGROUND_COLOR = "#F9FAFB"
+VERSION_FOLDER = "data/output/"
+GEOJSON_FILE = "data/input/counties_0.geojson"
+STATE_CODE_FILE = "data/input/state_code_to_name_0.json"
 
-GEOJSON_FILE = "../data/input/counties_0.geojson"
-VERSION_FOLDER = "../data/output/"
 os.makedirs(VERSION_FOLDER, exist_ok=True)
-
-# Load State Codes Mapping
-with open("../data/input/state_code_to_name_0.json", "r") as file:
-    STATE_CODE_TO_NAME = json.load(file)
 
 # -------------------------------------------------------------------
 # Helper Functions
 # -------------------------------------------------------------------
+@st.cache_data
+def load_state_codes(path):
+    with open(path, "r") as file:
+        return json.load(file)
+
 def compute_union_all(geometry_series):
     """
     Use shapely's union_all() to compute the union of geometries.
@@ -45,6 +48,7 @@ def compute_union_all(geometry_series):
     """
     return geometry_series.union_all()
 
+@st.cache_data
 def load_geojson(file_path):
     """
     Load GeoJSON into a GeoDataFrame and ensure consistent coloring.
@@ -198,6 +202,7 @@ def style_function_version(feature):
 # -------------------------------------------------------------------
 # Placeholder / Stub for additional Data/DB logic
 # -------------------------------------------------------------------
+@st.cache_data
 def get_sales_info():
     """Return sales info in a DataFrame, used for optional merging with counties."""
     return pd.DataFrame({
@@ -242,6 +247,7 @@ def get_sales_info():
 # Main Script
 # -------------------------------------------------------------------
 full_gdf = load_geojson(GEOJSON_FILE)
+STATE_CODE_TO_NAME = load_state_codes(STATE_CODE_FILE)
 
 # Initialize session states for polygons & versions
 if "pending_polygons" not in st.session_state:

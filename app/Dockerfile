@@ -23,5 +23,5 @@ COPY . .
 EXPOSE 8501
 
 # Default command to run Streamlit on container start
-CMD ["streamlit", "run", "./app/main_1.py", \
+CMD ["streamlit", "run", "./app/main_0.py", \
      "--server.port=8501", "--server.address=0.0.0.0"]
