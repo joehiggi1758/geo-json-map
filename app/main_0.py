@@ -458,6 +458,21 @@ with tab_main:
 
             # 2) Append newly drawn polygons
             for poly, color in st.session_state["pending_polygons"]:
+                
+                # 3) If any states have proposed polygons, color their counties
+                if st.session_state["states_with_proposed"]:
+                    updated_states_gdf = full_gdf[
+                        full_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
+                    ]
+                    final_gdf = pd.concat([final_gdf, updated_states_gdf]).drop_duplicates(
+                        subset=["STATEFP", "NAME", "geometry"]
+                    ).reset_index(drop=True)
+
+                    # Color original counties in these states
+                    mask_updated = final_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
+                    mask_proposed = final_gdf["NAME"].str.endswith("(Proposed)")
+                    final_gdf.loc[mask_updated & ~mask_proposed, "color"] = PRIMARY_COLOR
+                
                 statefp_val = selected_code if selected_code != "All" else None
                 new_row = gpd.GeoDataFrame(
                     {
@@ -473,20 +488,6 @@ with tab_main:
             # Clear pending polygons to free memory
             st.session_state["pending_polygons"].clear()
             st.success("Pending polygons merged into dataset.")
-
-            # 3) If any states have proposed polygons, color their counties
-            if st.session_state["states_with_proposed"]:
-                updated_states_gdf = full_gdf[
-                    full_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
-                ]
-                final_gdf = pd.concat([final_gdf, updated_states_gdf]).drop_duplicates(
-                    subset=["STATEFP", "NAME", "geometry"]
-                ).reset_index(drop=True)
-
-                # Color original counties in these states
-                mask_updated = final_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
-                mask_proposed = final_gdf["NAME"].str.endswith("(Proposed)")
-                final_gdf.loc[mask_updated & ~mask_proposed, "color"] = PRIMARY_COLOR
 
             # 4) Generate version file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
