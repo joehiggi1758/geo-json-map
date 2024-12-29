@@ -406,23 +406,44 @@ with tab_main:
     # Input for version name
     version_name = st.text_input("Enter version name (e.g., 'Draft 1'):")
 
-    # Save Proposed Districts
     if st.button("Save Proposed Territories"):
         if num_pending == 0:
             st.error("No polygons drawn to save!")
         elif not version_name.strip():
             st.error("Please enter a version name before saving.")
         else:
-            # 1) Start with base final_gdf (copy of 'filtered_gdf')
+            # 1) Start with your base final_gdf (copy of 'filtered_gdf')
             final_gdf = filtered_gdf.copy()
 
-            # 2) Merge newly drawn polygons
+            # 2) Determine which states actually got new polygons
+            updated_states_local = set()
+            for poly, color in st.session_state["pending_polygons"]:
+                if selected_code != "All":
+                    updated_states_local.add(selected_code)
+
+            # 3) If any states truly got updates, color all counties in those states FIRST
+            if updated_states_local:
+                # Pull ALL counties from full_gdf for these states
+                updated_counties = full_gdf[full_gdf["STATEFP"].isin(updated_states_local)]
+                
+                # Append them to final_gdf, remove duplicates
+                final_gdf = pd.concat([final_gdf, updated_counties]).drop_duplicates(
+                    subset=["STATEFP", "NAME", "geometry"]
+                ).reset_index(drop=True)
+                
+                # Color all those original counties as PRIMARY_COLOR
+                mask_updated = final_gdf["STATEFP"].isin(updated_states_local)
+                final_gdf.loc[mask_updated, "color"] = PRIMARY_COLOR
+
+            # 4) Now append the newly drawn polygons (with random color)
             for poly, color in st.session_state["pending_polygons"]:
                 statefp_value = selected_code if selected_code != "All" else None
+                name_value = f"{selected_county} (Proposed)"
+
                 new_row = gpd.GeoDataFrame(
                     {
                         "STATEFP": [statefp_value],
-                        "NAME": [f"{selected_county} (Proposed)"],
+                        "NAME": [name_value],
                         "color": [color],
                         "geometry": [poly],
                     },
@@ -430,22 +451,11 @@ with tab_main:
                 )
                 final_gdf = pd.concat([final_gdf, new_row], ignore_index=True)
 
+            # 5) Clear pending polygons
             st.session_state["pending_polygons"].clear()
-            st.success("Pending polygons have been merged into the dataset.")
+            st.success("All counties have been colored, and new polygons have been added.")
 
-            # 3) If we have any states with proposed polygons, color all their counties
-            if st.session_state["states_with_proposed"]:
-                updated_states_gdf = full_gdf[full_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])]
-                final_gdf = pd.concat([final_gdf, updated_states_gdf]).drop_duplicates(
-                    subset=["STATEFP", "NAME", "geometry"]
-                ).reset_index(drop=True)
-
-                # Color original counties as PRIMARY_COLOR
-                mask_updated = final_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
-                mask_proposed = final_gdf["NAME"].astype(str).str.endswith("(Proposed)")
-                final_gdf.loc[mask_updated & ~mask_proposed, "color"] = PRIMARY_COLOR
-
-            # 4) Generate timestamp + version filename
+            # 6) Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             sanitized_version_name = "".join(
                 c for c in version_name if c.isalnum() or c in (" ", "_", "-")
@@ -454,7 +464,7 @@ with tab_main:
                 VERSION_FOLDER, f"{sanitized_version_name}_{timestamp}.geojson"
             )
 
-            # 5) Save final_gdf
+            # 7) Save final_gdf to GeoJSON
             try:
                 final_gdf.to_file(version_file, driver="GeoJSON")
                 st.success(f"Proposed district saved as `{version_file}`")
@@ -462,7 +472,7 @@ with tab_main:
                 st.error(f"Error saving GeoJSON: {e}")
                 st.stop()
 
-            # 6) Update selected_version
+            # 8) Update selected_version for the Versions tab
             st.session_state["selected_version"] = os.path.basename(version_file)
             st.info("Version saved successfully! Please navigate to the 'Versions' tab to view it.")
 
