@@ -1,20 +1,19 @@
 # -------------------------------------------------------------------
 # Import statements
 # -------------------------------------------------------------------
-import matplotlib.pyplot as plt
-import geopandas as gpd
-import streamlit as st
-import pandas as pd
-import logging  # Optional for debugging
-import folium
-import random
-import json
-import io
 import os
-
-from streamlit_folium import st_folium
-from shapely.geometry import shape
+import io
+import json
+import random
+import logging  # Optional for debugging
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import streamlit as st
+import folium
 from datetime import datetime
+from shapely.geometry import shape
+from streamlit_folium import st_folium
 from folium import plugins
 from fpdf import FPDF
 
@@ -23,22 +22,16 @@ from fpdf import FPDF
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Redistricting Portal", layout="wide")
 
-PRIMARY_COLOR = "#B58264"   # Primary color for states
-HIGHLIGHT_COLOR = "#3A052E" # Color for the highlighted county
-PROPOSED_COLOR_DEFAULT = "#474546" # Default color for proposed districts
-BACKGROUND_COLOR = "#F9FAFB"       # Background color for the app
+PRIMARY_COLOR = "#B58264"
+HIGHLIGHT_COLOR = "#3A052E"
+PROPOSED_COLOR_DEFAULT = "#474546"
+BACKGROUND_COLOR = "#F9FAFB"
 
-# -------------------------------------------------------------------
-# Paths and Folder Configuration
-# -------------------------------------------------------------------
 GEOJSON_FILE = "../data/input/counties_0.geojson"
 VERSION_FOLDER = "../data/output/"
-
 os.makedirs(VERSION_FOLDER, exist_ok=True)
 
-# -------------------------------------------------------------------
-# State Codes Mapping
-# -------------------------------------------------------------------
+# Load State Codes Mapping
 with open("../data/input/state_code_to_name_0.json", "r") as file:
     STATE_CODE_TO_NAME = json.load(file)
 
@@ -46,13 +39,17 @@ with open("../data/input/state_code_to_name_0.json", "r") as file:
 # Helper Functions
 # -------------------------------------------------------------------
 def compute_union_all(geometry_series):
-    """Use shapely's union_all() to compute the union of geometries."""
+    """
+    Use shapely's union_all() to compute the union of geometries.
+    This is more efficient than iterating union step by step.
+    """
     return geometry_series.union_all()
 
 def load_geojson(file_path):
     """
-    Load GeoJSON into a GeoDataFrame and assign default color to existing districts.
-    Existing districts retain their 'color' if already set; otherwise, they are assigned PRIMARY_COLOR.
+    Load GeoJSON into a GeoDataFrame and ensure consistent coloring.
+    - If 'color' is missing or null, assign PRIMARY_COLOR.
+    - Ensure 'STATEFP' is zero-padded (2 digits).
     """
     try:
         gdf = gpd.read_file(file_path)
@@ -63,17 +60,20 @@ def load_geojson(file_path):
 
         if "STATEFP" in gdf.columns:
             gdf["STATEFP"] = gdf["STATEFP"].astype(str).str.zfill(2)
-
         return gdf
+
     except FileNotFoundError:
-        st.error("GeoJSON file not found. Please check the path.")
+        st.error("GeoJSON file not found. Check the path.")
         return gpd.GeoDataFrame({"geometry": []})
+
     except Exception as e:
         st.error(f"Error loading GeoJSON: {e}")
         return gpd.GeoDataFrame({"geometry": []})
 
 def save_geojson(data, file_path):
-    """Save a GeoDataFrame as a GeoJSON file."""
+    """
+    Save a GeoDataFrame as GeoJSON, with robust error handling.
+    """
     try:
         data.to_file(file_path, driver="GeoJSON")
         st.success(f"Saved version to `{file_path}`")
@@ -81,7 +81,10 @@ def save_geojson(data, file_path):
         st.error(f"Error saving GeoJSON: {e}")
 
 def list_saved_versions(folder_path):
-    """List .geojson version files sorted by timestamp descending (most recent first)."""
+    """
+    List .geojson version files sorted by timestamp descending (most recent first).
+    Uses a simple pattern: 'someName_YYYYMMDD_HHMMSS.geojson'.
+    """
     if not os.path.exists(folder_path):
         return []
 
@@ -92,8 +95,8 @@ def list_saved_versions(folder_path):
             base = os.path.splitext(filename)[0]
             parts = base.split("_")
             if len(parts) >= 2:
-                date_part = parts[-2]
-                time_part = parts[-1]
+                date_part = parts[-2]  # e.g. '20230412'
+                time_part = parts[-1]  # e.g. '153000'
                 timestamp_str = f"{date_part}_{time_part}"
                 return datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
             else:
@@ -104,7 +107,10 @@ def list_saved_versions(folder_path):
     return sorted(geojson_files, key=extract_timestamp, reverse=True)
 
 def generate_map_snapshot(gdf, title="Proposed Districts Snapshot"):
-    """Generate a PNG snapshot of a GeoDataFrame using matplotlib."""
+    """
+    Generate a PNG snapshot of a GeoDataFrame with matplotlib.
+    Return an in-memory buffer for further usage (e.g., embedding in PDF).
+    """
     if gdf.empty:
         fig, ax = plt.subplots(figsize=(8, 6))
         ax.text(0.5, 0.5, "No geometry to display", ha="center", va="center")
@@ -115,6 +121,7 @@ def generate_map_snapshot(gdf, title="Proposed Districts Snapshot"):
         ax.set_title(title)
         ax.axis("off")
         ax.set_aspect("equal")
+
     buf = io.BytesIO()
     plt.savefig(buf, format="png", bbox_inches="tight")
     plt.close(fig)
@@ -122,7 +129,9 @@ def generate_map_snapshot(gdf, title="Proposed Districts Snapshot"):
     return buf
 
 def generate_pdf(map_png, version_name, highlights):
-    """Create an in-memory PDF containing text, snapshot, etc., in landscape mode."""
+    """
+    Create an in-memory PDF with the provided map snapshot, version text, etc.
+    """
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.add_page()
 
@@ -132,7 +141,7 @@ def generate_pdf(map_png, version_name, highlights):
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, f"Version: {version_name}", ln=True)
 
-    if map_png is not None:
+    if map_png:
         temp_file = "temp_map_snapshot.png"
         try:
             with open(temp_file, "wb") as temp_img:
@@ -142,7 +151,6 @@ def generate_pdf(map_png, version_name, highlights):
             margin = 10
             map_width = int(page_width * 0.7) - (2 * margin)
             comments_width = int(page_width * 0.3) - margin
-
             map_x = margin
             map_y = pdf.get_y()
             pdf.image(temp_file, x=map_x, y=map_y, w=map_width)
@@ -161,7 +169,9 @@ def generate_pdf(map_png, version_name, highlights):
     return None
 
 def get_random_color():
-    """Generate a random hex color."""
+    """
+    Generate a random hex color for proposed polygons.
+    """
     return "#{:06x}".format(random.randint(0, 0xFFFFFF))
 
 def style_function(feature):
@@ -189,7 +199,7 @@ def style_function_version(feature):
 # Placeholder / Stub for additional Data/DB logic
 # -------------------------------------------------------------------
 def get_sales_info():
-    """Stub function to return sales information."""
+    """Return sales info in a DataFrame, used for optional merging with counties."""
     return pd.DataFrame({
         "NAME": [],
         "STATEFP": [],
@@ -198,28 +208,58 @@ def get_sales_info():
     })
 
 # -------------------------------------------------------------------
+# IBM ODM or Align Star Integration
+# (Comment out the relevant code blocks if not in use)
+# -------------------------------------------------------------------
+# def call_ibm_odm_api(final_gdf):
+#     # IBM ODM code here
+#     # e.g., send final_gdf as JSON to an ODM endpoint
+#     pass
+
+# def align_star_export(final_gdf):
+#     # Align Star code or export logic
+#     # e.g., produce a specialized file format for Align Star
+#     pass
+
+# -------------------------------------------------------------------
+# Optional: Write final_gdf to PostgreSQL in Docker
+# -------------------------------------------------------------------
+# from sqlalchemy import create_engine
+
+# def write_to_postgres(final_gdf, table_name="final_districts"):
+#     """
+#     Example usage of SQLAlchemy to insert final_gdf into a PostGIS-enabled PostgreSQL DB.
+#     Docker container must be running with port exposed.
+#     """
+#     # connection_string = "postgresql://user:password@localhost:5432/mydb"
+#     # engine = create_engine(connection_string)
+#     # if final_gdf.crs and final_gdf.crs.to_epsg() != 4326:
+#     #     final_gdf = final_gdf.to_crs(epsg=4326)
+#     # final_gdf.to_postgis(table_name, engine, if_exists="append", index=False)
+#     pass
+
+# -------------------------------------------------------------------
 # Main Script
 # -------------------------------------------------------------------
 full_gdf = load_geojson(GEOJSON_FILE)
 
-# Initialize session state
+# Initialize session states for polygons & versions
 if "pending_polygons" not in st.session_state:
     st.session_state["pending_polygons"] = []
-
 if "selected_version" not in st.session_state:
     st.session_state["selected_version"] = None
-
 if "last_polygon" not in st.session_state:
     st.session_state["last_polygon"] = None
 
-# List of visited states
+# Keep a list of visited states
 if "updated_states_list" not in st.session_state:
     st.session_state["updated_states_list"] = []
 
-# Set of states that actually have newly proposed polygons
+# Track states that actually have newly proposed polygons
 if "states_with_proposed" not in st.session_state:
     st.session_state["states_with_proposed"] = set()
 
+# Title
 st.title("Interactive Redistricting Portal")
 
 # -------------------------------------------------------------------
@@ -228,7 +268,7 @@ st.title("Interactive Redistricting Portal")
 st.sidebar.header("Select a State")
 
 if "STATEFP" not in full_gdf.columns:
-    st.error("No 'STATEFP' column found in the GeoJSON file.")
+    st.error("No 'STATEFP' column found in the GeoJSON.")
     st.stop()
 
 states_in_data = sorted(set(full_gdf["STATEFP"].unique()) & set(STATE_CODE_TO_NAME.keys()))
@@ -241,15 +281,17 @@ selected_code = st.sidebar.selectbox(
     format_func=lambda c: STATE_CODE_TO_NAME.get(c, f"Unknown ({c})"),
 )
 
+# Populate visited states list
 if selected_code not in st.session_state["updated_states_list"] and selected_code != "All":
     st.session_state["updated_states_list"].append(selected_code)
 
-# Filter gdf based on selected_code
+# Filter GDF for chosen state
 if selected_code == "All":
     filtered_gdf = full_gdf
 else:
     filtered_gdf = full_gdf[full_gdf["STATEFP"] == selected_code]
 
+# Compute centroid
 if not filtered_gdf.empty:
     combined_geom = compute_union_all(filtered_gdf.geometry)
     state_centroid = combined_geom.centroid
@@ -258,7 +300,7 @@ else:
 
 st.sidebar.header("Select a County")
 if "NAME" not in filtered_gdf.columns:
-    st.error("No 'NAME' column found in the GeoJSON file.")
+    st.error("No 'NAME' column in the GeoJSON.")
     st.stop()
 
 county_names = sorted(filtered_gdf["NAME"].unique())
@@ -280,8 +322,10 @@ with tab_main:
         map_location = [state_centroid.y, state_centroid.x]
         map_zoom = 6
 
+    # Load optional sales data
     sales_df = get_sales_info()
 
+    # Merge if we have sales data
     if not sales_df.empty:
         filtered_gdf["STATEFP"] = filtered_gdf["STATEFP"].astype(str)
         sales_df["STATEFP"] = sales_df["STATEFP"].astype(str)
@@ -293,8 +337,7 @@ with tab_main:
             how="outer",
             indicator=True
         )
-
-        # Group by geometry to combine any duplicated rows
+        # Group once to minimize duplicates
         merged_df = (
             merged_df.groupby("geometry", as_index=False)
             .agg({
@@ -308,12 +351,13 @@ with tab_main:
         )
         final_gdf = gpd.GeoDataFrame(merged_df, geometry="geometry", crs=filtered_gdf.crs)
     else:
-        # No sales data
+        # No sales data, proceed with filtered_gdf
         final_gdf = filtered_gdf.copy()
         final_gdf["SalesRep"] = None
         final_gdf["Product"] = None
         final_gdf["color"] = final_gdf["color"].fillna(PRIMARY_COLOR)
 
+        # Group once to ensure uniqueness
         final_gdf = (
             final_gdf.groupby("geometry", as_index=False)
             .agg({
@@ -327,12 +371,13 @@ with tab_main:
         )
         final_gdf = gpd.GeoDataFrame(final_gdf, geometry="geometry", crs=filtered_gdf.crs)
 
-    # Ensure columns for Folium tooltips
+    # Ensure tooltip fields exist
     if "SalesRep" not in final_gdf.columns:
         final_gdf["SalesRep"] = None
     if "Product" not in final_gdf.columns:
         final_gdf["Product"] = None
 
+    # Convert STATEFP list to a comma-separated string
     final_gdf["STATEFP"] = final_gdf["STATEFP"].apply(
         lambda x: ", ".join(x) if isinstance(x, list) else x
     )
@@ -346,7 +391,6 @@ with tab_main:
         tiles="OpenStreetMap",
     )
 
-    # Add GeoJSON layer
     folium.GeoJson(
         final_gdf.__geo_interface__,
         style_function=style_function,
@@ -356,7 +400,6 @@ with tab_main:
         ),
     ).add_to(m)
 
-    # Add Draw plugin
     draw_control = plugins.Draw(
         export=False,
         edit_options={"edit": True, "remove": True},
@@ -371,7 +414,7 @@ with tab_main:
     )
     m.add_child(draw_control)
 
-    # Render the map
+    # Render map
     map_result = st_folium(m, width="100%", height=600)
 
     # Capture newly drawn polygons
@@ -388,62 +431,38 @@ with tab_main:
                     rand_color = get_random_color()
                     st.session_state["pending_polygons"].append((drawn_shape, rand_color))
 
-                    # If we actually drew a polygon in a real state (not "All"), track it
+                    # If user draws a polygon in a real state, track it
                     if selected_code != "All":
                         st.session_state["states_with_proposed"].add(selected_code)
 
-                    st.success(
-                        f"Added new Territory ({drawn_shape.geom_type}) with color {rand_color}."
-                    )
+                    st.success(f"Added new territory with color {rand_color}.")
                 else:
-                    st.error(f"You drew a {drawn_shape.geom_type}. Only polygons are accepted!")
+                    st.error(f"Only polygons are accepted (you drew {drawn_shape.geom_type}).")
             else:
                 st.error("No valid geometry found in the drawn feature.")
 
     num_pending = len(st.session_state["pending_polygons"])
     st.write(f"**Updated Districts:** {num_pending}")
 
-    # Input for version name
     version_name = st.text_input("Enter version name (e.g., 'Draft 1'):")
 
+    # ------------------ SAVE PROPOSED TERRITORIES ------------------
     if st.button("Save Proposed Territories"):
         if num_pending == 0:
             st.error("No polygons drawn to save!")
         elif not version_name.strip():
             st.error("Please enter a version name before saving.")
         else:
-            # 1) Start with your base final_gdf (copy of 'filtered_gdf')
+            # 1) Start with a copy of filtered_gdf
             final_gdf = filtered_gdf.copy()
 
-            # 2) Determine which states actually got new polygons
-            updated_states_local = set()
+            # 2) Append newly drawn polygons
             for poly, color in st.session_state["pending_polygons"]:
-                if selected_code != "All":
-                    updated_states_local.add(selected_code)
-
-            # 3) If any states truly got updates, color all counties in those states FIRST
-            if updated_states_local:
-                # Pull ALL counties from full_gdf for these states
-                updated_counties = full_gdf[full_gdf["STATEFP"].isin(updated_states_local)]
-                
-                # Append them to final_gdf, remove duplicates
-                final_gdf = pd.concat([final_gdf, updated_counties]).drop_duplicates(
-                    subset=["STATEFP", "NAME", "geometry"]
-                ).reset_index(drop=True)
-                
-                # Color all those original counties as PRIMARY_COLOR
-                mask_updated = final_gdf["STATEFP"].isin(updated_states_local)
-                final_gdf.loc[mask_updated, "color"] = PRIMARY_COLOR
-
-            # 4) Now append the newly drawn polygons (with random color)
-            for poly, color in st.session_state["pending_polygons"]:
-                statefp_value = selected_code if selected_code != "All" else None
-                name_value = f"{selected_county} (Proposed)"
-
+                statefp_val = selected_code if selected_code != "All" else None
                 new_row = gpd.GeoDataFrame(
                     {
-                        "STATEFP": [statefp_value],
-                        "NAME": [name_value],
+                        "STATEFP": [statefp_val],
+                        "NAME": [f"{selected_county} (Proposed)"],
                         "color": [color],
                         "geometry": [poly],
                     },
@@ -451,20 +470,32 @@ with tab_main:
                 )
                 final_gdf = pd.concat([final_gdf, new_row], ignore_index=True)
 
-            # 5) Clear pending polygons
+            # Clear pending polygons to free memory
             st.session_state["pending_polygons"].clear()
-            st.success("All counties have been colored, and new polygons have been added.")
+            st.success("Pending polygons merged into dataset.")
 
-            # 6) Generate filename
+            # 3) If any states have proposed polygons, color their counties
+            if st.session_state["states_with_proposed"]:
+                updated_states_gdf = full_gdf[
+                    full_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
+                ]
+                final_gdf = pd.concat([final_gdf, updated_states_gdf]).drop_duplicates(
+                    subset=["STATEFP", "NAME", "geometry"]
+                ).reset_index(drop=True)
+
+                # Color original counties in these states
+                mask_updated = final_gdf["STATEFP"].isin(st.session_state["states_with_proposed"])
+                mask_proposed = final_gdf["NAME"].str.endswith("(Proposed)")
+                final_gdf.loc[mask_updated & ~mask_proposed, "color"] = PRIMARY_COLOR
+
+            # 4) Generate version file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            sanitized_version_name = "".join(
+            sanitized_name = "".join(
                 c for c in version_name if c.isalnum() or c in (" ", "_", "-")
             ).rstrip()
-            version_file = os.path.join(
-                VERSION_FOLDER, f"{sanitized_version_name}_{timestamp}.geojson"
-            )
+            version_file = os.path.join(VERSION_FOLDER, f"{sanitized_name}_{timestamp}.geojson")
 
-            # 7) Save final_gdf to GeoJSON
+            # 5) Save
             try:
                 final_gdf.to_file(version_file, driver="GeoJSON")
                 st.success(f"Proposed district saved as `{version_file}`")
@@ -472,14 +503,19 @@ with tab_main:
                 st.error(f"Error saving GeoJSON: {e}")
                 st.stop()
 
-            # 8) Update selected_version for the Versions tab
             st.session_state["selected_version"] = os.path.basename(version_file)
-            st.info("Version saved successfully! Please navigate to the 'Versions' tab to view it.")
+            st.info("Version saved. Navigate to 'Versions' tab to view.")
 
-# ===================== TAB: SAVED VERSION SNAPSHOT =====================
+            # 6) Optional: IBM ODM or Align Star calls
+            # call_ibm_odm_api(final_gdf)
+            # align_star_export(final_gdf)
+
+            # 7) Optional: Write to Postgres
+            # write_to_postgres(final_gdf, table_name="final_districts")
+
+# ===================== TAB: VERSIONS =====================
 with tab_versions:
     st.header("Saved Versions")
-
     saved_versions = list_saved_versions(VERSION_FOLDER)
     if not saved_versions:
         st.info("No saved versions available.")
@@ -490,11 +526,10 @@ with tab_versions:
             if os.path.exists(version_path):
                 version_gdf = load_geojson(version_path)
 
-                # Ensure columns exist for Folium tooltips
-                if "SalesRep" not in version_gdf.columns:
-                    version_gdf["SalesRep"] = None
-                if "Product" not in version_gdf.columns:
-                    version_gdf["Product"] = None
+                # Ensure columns for tooltip
+                for col in ["SalesRep", "Product"]:
+                    if col not in version_gdf.columns:
+                        version_gdf[col] = None
 
                 st.subheader(f"Map for `{selected_version}`")
 
@@ -505,8 +540,7 @@ with tab_versions:
                         map_location = [version_centroid.y, version_centroid.x]
                         map_zoom = 6
                     else:
-                        map_location = [39.833, -98.5795]
-                        map_zoom = 4
+                        map_location, map_zoom = [39.833, -98.5795], 4
 
                     m_version = folium.Map(
                         location=map_location,
@@ -536,7 +570,6 @@ with tab_versions:
                         selected_version,
                         pdf_highlights,
                     )
-
                     if pdf_data:
                         st.download_button(
                             label="Export PDF",
@@ -544,7 +577,7 @@ with tab_versions:
                             file_name=f"redistricting_report_{selected_version}.pdf",
                             mime="application/pdf",
                         )
-                        st.success("PDF report generated and download is ready.")
+                        st.success("PDF download ready.")
                     else:
                         st.error("Failed to generate PDF.")
                 else:
@@ -568,26 +601,25 @@ with tab_upload:
     uploaded_file = st.file_uploader("Upload Proposed Changes (CSV or XLSX)")
     if uploaded_file:
         fname_lower = uploaded_file.name.lower()
+        df_uploaded = None
+
         if fname_lower.endswith(".csv"):
             try:
                 df_uploaded = pd.read_csv(uploaded_file)
                 st.success(f"Loaded {len(df_uploaded)} rows from `{uploaded_file.name}`.")
             except Exception as e:
-                st.error(f"Error reading CSV file: {e}")
-                df_uploaded = None
+                st.error(f"Error reading CSV: {e}")
         elif fname_lower.endswith(".xlsx"):
             try:
                 df_uploaded = pd.read_excel(uploaded_file)
                 st.success(f"Loaded {len(df_uploaded)} rows from `{uploaded_file.name}`.")
             except Exception as e:
-                st.error(f"Error reading Excel file: {e}")
-                df_uploaded = None
+                st.error(f"Error reading Excel: {e}")
         else:
-            st.error("Unsupported file type. Please upload a CSV or XLSX file.")
-            df_uploaded = None
+            st.error("Unsupported file type. Please upload CSV or XLSX.")
 
         if df_uploaded is not None:
             # Placeholder for DB insertion logic
             # insert_into_staging_table(df_uploaded)
-            st.info("Uploaded data is ready for processing.")
+            st.info("Data is ready for processing.")
             st.dataframe(df_uploaded)
