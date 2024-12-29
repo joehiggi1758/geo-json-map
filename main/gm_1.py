@@ -285,6 +285,20 @@ selected_code = st.sidebar.selectbox(
     format_func=lambda c: STATE_CODE_TO_NAME.get(c, f"Unknown ({c})"),
 )
 
+# Initialize ls_0 if not already done
+if 'ls_0' not in st.session_state:
+    st.session_state['ls_0'] = []
+
+# Append the selected state if it's not already in the list
+if selected_code not in st.session_state['ls_0'] and selected_code != 'All':
+    st.session_state['ls_0'].append(selected_code)
+
+# Ensure the list contains only unique elements
+unique_ls_0 = list({i for i in st.session_state['ls_0']})
+
+# Display the updated unique list
+st.write("Unique Selected States:", unique_ls_0)
+
 # Filter GeoDataFrame based on selected state
 if selected_code == "All":
     filtered_gdf = full_gdf
@@ -305,17 +319,6 @@ if "NAME" not in filtered_gdf.columns:
 
 county_names = sorted(filtered_gdf["NAME"].unique())
 selected_county = st.sidebar.selectbox("Choose a county:", county_names)
-
-# 1) Rename "updated_states_list" to something more descriptive, e.g. "updated_states_list"
-if "updated_states_list" not in st.session_state:
-    st.session_state["updated_states_list"] = []
-
-# 2) Whenever the user chooses a new state (other than "All"), append it
-if selected_code not in st.session_state["updated_states_list"] and selected_code != "All":
-    st.session_state["updated_states_list"].append(selected_code)
-
-# 3) Create a unique list to avoid duplicates
-unique_visited_states = sorted(set(st.session_state["updated_states_list"]))
 
 # -------------------------------------------------------------------
 # TABS
@@ -470,50 +473,40 @@ with tab_main:
         elif not version_name.strip():
             st.error("Please enter a version name before saving.")
         else:
-            # 1) Start with your base final_gdf (e.g., a copy of 'filtered_gdf')
-            #    This is wherever you want to accumulate the final version.
-            final_gdf = filtered_gdf.copy()
-
-            # 2) Keep track locally of which states truly have newly drawn polygons
-            updated_states_local = set()
-
-            # 3) Merge newly drawn polygons
+            # Merge pending polygons into final_gdf with random colors
+            # print(final_gdf.shape)
             for poly, color in st.session_state["pending_polygons"]:
+                # Capture the values for the current polygon
                 statefp_value = selected_code if selected_code != "All" else None
-                # Collect only actual updated states in a local set
-                if statefp_value:
-                    updated_states_local.add(statefp_value)
-
                 name_value = f"{selected_county} (Proposed)"
+                sales_rep_value = None
+                product_value = None
+
+                # Create a new GeoDataFrame row for the current polygon
                 new_row = gpd.GeoDataFrame(
                     {
                         "STATEFP": [statefp_value],
                         "NAME": [name_value],
-                        "color": [color],
+                        "SalesRep": [sales_rep_value],
+                        "Product": [product_value],
+                        "color": [color],  # Assign random color
                         "geometry": [poly],
                     },
                     crs=final_gdf.crs,
                 )
+
+                # Append the new row to the existing final_gdf
                 final_gdf = pd.concat([final_gdf, new_row], ignore_index=True)
+                # print(final_gdf.shape)
+
 
             # Clear pending polygons
             st.session_state["pending_polygons"].clear()
             st.success("Pending polygons have been merged into the dataset.")
 
-            # 4) Only append all counties for states that *actually* got updated polygons
-            if updated_states_local:
-                updated_states_gdf = full_gdf[full_gdf["STATEFP"].isin(updated_states_local)]
-                final_gdf = pd.concat([final_gdf, updated_states_gdf]).drop_duplicates(
-                    subset=["STATEFP", "NAME", "geometry"]
-                ).reset_index(drop=True)
-
-                # Color only the *original* (non-proposed) counties in these updated states
-                mask_updated = final_gdf["STATEFP"].isin(updated_states_local)
-                mask_proposed = final_gdf["NAME"].astype(str).str.endswith("(Proposed)")
-                final_gdf.loc[mask_updated & ~mask_proposed, "color"] = PRIMARY_COLOR
-
-            # 5) Generate timestamp & version file
+            # Generate timestamp and file name
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Sanitize version name to create a valid filename
             sanitized_version_name = "".join(
                 c for c in version_name if c.isalnum() or c in (" ", "_", "-")
             ).rstrip()
@@ -521,18 +514,38 @@ with tab_main:
                 VERSION_FOLDER, f"{sanitized_version_name}_{timestamp}.geojson"
             )
 
-            # 6) Save final_gdf to GeoJSON
+            # Save to GeoJSON
             try:
+                # Ensure all non-proposed districts have PRIMARY_COLOR
+                final_gdf["color"] = final_gdf.apply(
+                    lambda row: (
+                        row["color"]
+                        if pd.notnull(row["color"]) and row["color"] != PRIMARY_COLOR
+                        else PRIMARY_COLOR
+                    ),
+                    axis=1,
+                )
                 final_gdf.to_file(version_file, driver="GeoJSON")
                 st.success(f"Proposed district saved as `{version_file}`")
             except Exception as e:
                 st.error(f"Error saving GeoJSON: {e}")
                 st.stop()
 
-            # 7) Update selected_version for the Versions tab
-            st.session_state["selected_version"] = os.path.basename(version_file)
-            st.info("Version saved successfully! Please navigate to the 'Versions' tab to view it.")
+            # Placeholder for ODM API Auditing
+            # Replace with actual auditing logic when ready
+            # audit_to_odm_api({
+            #     "version_name": sanitized_version_name,
+            #     "count_polygons": len(final_gdf),
+            #     "time_saved": timestamp
+            # })
 
+            # Update selected version without rerunning
+            st.session_state["selected_version"] = os.path.basename(version_file)
+
+            # Notify the user to switch tabs to view the saved version
+            st.info(
+                "Version saved successfully! Please navigate to the 'Saved Versions' tab to view it."
+            )
 
 # ------------------ TAB: SAVED VERSION SNAPSHOT --------------------
 with tab_versions:
