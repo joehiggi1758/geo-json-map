@@ -1,7 +1,7 @@
 # docker-compose.yml
 services:
   db:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.3  # Use the PostGIS image
     container_name: my_postgres
     restart: always
     environment:

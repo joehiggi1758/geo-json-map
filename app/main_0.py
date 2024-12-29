@@ -27,9 +27,9 @@ st.set_page_config(page_title="Redistricting Portal", layout="wide")
 
 PRIMARY_COLOR = "#B58264"
 HIGHLIGHT_COLOR = "#3A052E"
-VERSION_FOLDER = "data/output/"
-GEOJSON_FILE = "data/input/counties_0.geojson"
-STATE_CODE_FILE = "data/input/state_code_to_name_0.json"
+VERSION_FOLDER = "../data/output/"
+GEOJSON_FILE = "../data/input/counties_0.geojson"
+STATE_CODE_FILE = "../data/input/state_code_to_name_0.json"
 
 os.makedirs(VERSION_FOLDER, exist_ok=True)
 
@@ -568,15 +568,34 @@ with tab_versions:
 
                     st_folium(m_version, width="100%", height=600)
 
-                    # Export PDF
+                    # -----------------------------------
+                    # PDF Highlights / Comments Section
+                    # -----------------------------------
                     st.markdown("### Export PDF")
-                    pdf_highlights = st.text_area("Key highlights or comments for this version:")
 
+                    # 1) Initialize a key in session_state to store the text
+                    if "pdf_highlights" not in st.session_state:
+                        st.session_state["pdf_highlights"] = ""
+
+                    # 2) Define a callback that updates session_state whenever the text changes
+                    def update_text():
+                        st.session_state["pdf_highlights"] = st.session_state["pdf_text_input"]
+
+                    # 3) Create the text area with the callback
+                    pdf_text_input = st.text_area(
+                        "Key highlights or comments for this version:",
+                        key="pdf_text_input",
+                        on_change=update_text
+                    )
+
+                    # 4) When generating PDF, use the latest text from session_state
                     pdf_data = generate_pdf(
                         generate_map_snapshot(version_gdf, title=""),
                         selected_version,
-                        pdf_highlights,
+                        st.session_state["pdf_highlights"],  # <<--- Updated here
                     )
+
+                    # 5) Provide the download button as before
                     if pdf_data:
                         st.download_button(
                             label="Export PDF",
@@ -587,10 +606,6 @@ with tab_versions:
                         st.success("PDF download ready.")
                     else:
                         st.error("Failed to generate PDF.")
-                else:
-                    st.error(f"No geometry found in `{selected_version}`.")
-            else:
-                st.error(f"Version file `{selected_version}` not found.")
 
 # ===================== TAB: UPLOAD DATA =====================
 with tab_upload:
