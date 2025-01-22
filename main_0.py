@@ -27,9 +27,9 @@ st.set_page_config(page_title="Redistricting Portal", layout="wide")
 
 PRIMARY_COLOR = "#B58264"
 HIGHLIGHT_COLOR = "#3A052E"
-VERSION_FOLDER = "../data/output/"
-GEOJSON_FILE = "../data/input/counties_0.geojson"
-STATE_CODE_FILE = "../data/input/state_code_to_name_0.json"
+VERSION_FOLDER = "data/output/"
+GEOJSON_FILE = "data/input/counties_0.geojson"
+STATE_CODE_FILE = "data/input/state_code_to_name_0.json"
 
 os.makedirs(VERSION_FOLDER, exist_ok=True)
 
