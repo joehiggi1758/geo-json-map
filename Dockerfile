@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy in requirements first (for Docker build cache efficiency)
-COPY ./app/requirements.txt .
+COPY ./requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt && \
@@ -25,5 +25,5 @@ COPY . .
 EXPOSE 8501
 
 # Default command to run Streamlit on container start
-CMD ["streamlit", "run", "./app/main_0.py", \
+CMD ["streamlit", "run", "./main_0.py", \
      "--server.port=8501", "--server.address=0.0.0.0"]
